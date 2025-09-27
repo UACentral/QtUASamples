@@ -166,6 +166,11 @@ void MainWindow::setupChart()
     // Create line series
     m_series = new QLineSeries();
     m_series->setName("Value");
+    
+    // Enable markers on data points
+    m_series->setPointsVisible(true);
+    m_series->setMarkerSize(4.0); // Size of the markers (50% smaller)
+    
     m_chart->addSeries(m_series);
     
     // Create axes
