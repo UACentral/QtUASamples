@@ -5,6 +5,10 @@
 #include <QOpcUaClient>
 #include <QOpcUaProvider>
 #include <QOpcUaNode>
+#include <QDateTime>
+#include <QtCharts/QChart>
+#include <QtCharts/QLineSeries>
+#include <QtCharts/QValueAxis>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -32,5 +36,15 @@ private:
     QOpcUaClient *m_client;
     QOpcUaNode *m_node;
     bool m_connected;
+    
+    // Chart components
+    QChart *m_chart;
+    QLineSeries *m_series;
+    QValueAxis *m_axisX;
+    QValueAxis *m_axisY;
+    QDateTime m_startTime;
+    
+    void setupChart();
+    void addDataPoint(double value);
 };
 #endif // MAINWINDOW_H
