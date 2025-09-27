@@ -3,6 +3,10 @@
 #include <QApplication>
 #include <QMessageBox>
 #include <QDebug>
+#include <QtCharts/QChart>
+#include <QtCharts/QChartView>
+#include <QtCharts/QLineSeries>
+#include <QtCharts/QValueAxis>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -29,6 +33,9 @@ MainWindow::MainWindow(QWidget *parent)
     
     // Set initial UI state
     ui->lineEditValue->setReadOnly(true);
+    
+    // Setup chart
+    setupChart();
 }
 
 MainWindow::~MainWindow()
@@ -119,6 +126,9 @@ void MainWindow::onClientStateChanged(QOpcUaClient::ClientState state)
         ui->pushButtonConnectDisconned->setText("Connect");
         ui->pushButtonConnectDisconned->setEnabled(true);
         ui->lineEditValue->clear();
+        // Clear chart data
+        m_series->clear();
+        m_startTime = QDateTime::currentDateTime();
         break;
         
     case QOpcUaClient::ClientState::Connecting:
@@ -136,5 +146,86 @@ void MainWindow::onValueUpdated(QOpcUa::NodeAttribute attr, QVariant value)
     if (attr == QOpcUa::NodeAttribute::Value) {
         ui->lineEditValue->setText(value.toString());
         qDebug() << "Value updated:" << value;
+        
+        // Add data point to chart
+        bool ok;
+        double numericValue = value.toDouble(&ok);
+        if (ok) {
+            addDataPoint(numericValue);
+        }
+    }
+}
+
+void MainWindow::setupChart()
+{
+    // Create chart
+    m_chart = new QChart();
+    m_chart->setTitle("OPC UA Data");
+    m_chart->setAnimationOptions(QChart::NoAnimation);
+    
+    // Create line series
+    m_series = new QLineSeries();
+    m_series->setName("Value");
+    m_chart->addSeries(m_series);
+    
+    // Create axes
+    m_axisX = new QValueAxis();
+    m_axisX->setTitleText("Time (seconds)");
+    m_axisX->setRange(0, 60); // Show last 60 seconds
+    m_axisX->setTickCount(7); // Show 7 tick marks
+    
+    m_axisY = new QValueAxis();
+    m_axisY->setTitleText("Value");
+    m_axisY->setRange(0, 100); // Initial range, will auto-adjust
+    
+    m_chart->addAxis(m_axisX, Qt::AlignBottom);
+    m_chart->addAxis(m_axisY, Qt::AlignLeft);
+    m_series->attachAxis(m_axisX);
+    m_series->attachAxis(m_axisY);
+    
+    // Set chart to chart view
+    ui->chartView->setChart(m_chart);
+    ui->chartView->setRenderHint(QPainter::Antialiasing);
+    
+    // Initialize start time
+    m_startTime = QDateTime::currentDateTime();
+}
+
+void MainWindow::addDataPoint(double value)
+{
+    // Calculate time elapsed since start in seconds
+    qint64 elapsed = m_startTime.msecsTo(QDateTime::currentDateTime()) / 1000.0;
+    
+    // Add point to series
+    m_series->append(elapsed, value);
+    
+    // Keep only last 100 points for performance
+    if (m_series->count() > 100) {
+        m_series->removePoints(0, m_series->count() - 100);
+    }
+    
+    // Auto-adjust Y axis range
+    if (!m_series->points().isEmpty()) {
+        QList<QPointF> points = m_series->points();
+        double minY = points.first().y();
+        double maxY = points.first().y();
+        
+        for (const QPointF &point : points) {
+            minY = qMin(minY, point.y());
+            maxY = qMax(maxY, point.y());
+        }
+        
+        // Add some padding
+        double padding = (maxY - minY) * 0.1;
+        if (padding == 0) padding = 1; // Minimum padding
+        
+        m_axisY->setRange(minY - padding, maxY + padding);
+    }
+    
+    // Auto-adjust X axis to show last 60 seconds
+    if (elapsed > 60) {
+        m_axisX->setRange(elapsed - 60, elapsed);
+    } else {
+        m_axisX->setRange(0, 60);
     }
 }
