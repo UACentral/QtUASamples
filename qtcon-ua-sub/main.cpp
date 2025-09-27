@@ -5,9 +5,81 @@
 #include <QDebug>
 #include <QObject>
 #include <QTimer>
+#include <QTextStream>
+#include <QSocketNotifier>
+#include <QThread>
+
+#ifdef Q_OS_WIN
+#include <conio.h>
+#include <windows.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
 
 // Define the server endpoint URL
 const QString OpcUaEndpoint = "opc.tcp://m3:48400/UA/ComServerWrapper";
+
+class KeyboardHandler : public QObject
+{
+    Q_OBJECT
+
+public:
+    KeyboardHandler(QObject *parent = nullptr) : QObject(parent)
+    {
+#ifdef Q_OS_WIN
+        // For Windows, we'll use a timer to periodically check for key presses
+        keyCheckTimer = new QTimer(this);
+        connect(keyCheckTimer, &QTimer::timeout, this, &KeyboardHandler::checkForKeyPress);
+        keyCheckTimer->start(100); // Check every 100ms
+#else
+        // For Unix-like systems, set up non-blocking stdin
+        setupUnixInput();
+#endif
+    }
+
+public slots:
+    void checkForKeyPress()
+    {
+#ifdef Q_OS_WIN
+        if (_kbhit()) {
+            int key = _getch();
+            if (key == 27) { // Escape key
+                emit escapePressed();
+            }
+        }
+#endif
+    }
+
+signals:
+    void escapePressed();
+
+private:
+#ifdef Q_OS_WIN
+    QTimer *keyCheckTimer;
+#else
+    void setupUnixInput()
+    {
+        // Set stdin to non-blocking mode
+        int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+        fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+        
+        QSocketNotifier *notifier = new QSocketNotifier(STDIN_FILENO, QSocketNotifier::Read, this);
+        connect(notifier, &QSocketNotifier::activated, this, &KeyboardHandler::readStdin);
+    }
+    
+    void readStdin()
+    {
+        char ch;
+        if (read(STDIN_FILENO, &ch, 1) > 0) {
+            if (ch == 27) { // Escape key
+                emit escapePressed();
+            }
+        }
+    }
+#endif
+};
 
 int main(int argc, char *argv[])
 {
@@ -68,15 +140,28 @@ int main(int argc, char *argv[])
                          }
                      });
 
+    // Set up keyboard handler for Escape key
+    KeyboardHandler *keyHandler = new KeyboardHandler(&a);
+    QObject::connect(keyHandler, &KeyboardHandler::escapePressed, [&a, client]() {
+        qDebug() << "Escape key pressed. Shutting down...";
+        if (client) {
+            client->disconnectFromEndpoint();
+        }
+        a.quit();
+    });
+
     // Set up a timer to keep the subscription running for demonstration
     QTimer *timer = new QTimer(&a);
     QObject::connect(timer, &QTimer::timeout, []() {
-        qDebug() << "Subscription still active...";
+        qDebug() << "Subscription active... (Press Escape to quit)";
     });
     timer->start(10000); // Print status every 10 seconds
 
     qDebug() << "Requesting endpoints from" << OpcUaEndpoint;
+    qDebug() << "Press Escape key to quit the application";
     client->requestEndpoints(QUrl(OpcUaEndpoint));
 
     return a.exec();
 }
+
+#include "main.moc"
