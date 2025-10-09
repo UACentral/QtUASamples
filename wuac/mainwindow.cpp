@@ -145,7 +145,7 @@ void MainWindow::onValueUpdated(QOpcUa::NodeAttribute attr, QVariant value)
 {
     if (attr == QOpcUa::NodeAttribute::Value) {
         ui->lineEditValue->setText(value.toString());
-        qDebug() << "Value updated:" << value;
+        qDebug() << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz") << "Value updated:" << value;
         
         // Add data point to chart
         bool ok;
