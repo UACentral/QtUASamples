@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
                 QObject::connect(node, &QOpcUaNode::attributeUpdated,
                                  [node](QOpcUa::NodeAttribute attr, QVariant value) {
                                      if (attr == QOpcUa::NodeAttribute::Value) {
-                                         qDebug() << "Subscription update - Value:" << value;
+                                        qDebug() << qPrintable(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz AP") + " Subscription update - Value: " + value.toString());
                                      }
                                  });
 
