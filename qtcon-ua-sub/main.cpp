@@ -97,11 +97,13 @@ int main(int argc, char *argv[])
         return 2;
     }
 
+    QOpcUaNode *node = nullptr;
+
     // Connect to the stateChanged signal
-    QObject::connect(client, &QOpcUaClient::stateChanged, [client](QOpcUaClient::ClientState state) {
+    QObject::connect(client, &QOpcUaClient::stateChanged, [client, &node, &a](QOpcUaClient::ClientState state) {
         qDebug() << "Client state changed:" << state;
         if (state == QOpcUaClient::ClientState::Connected) {
-            QOpcUaNode *node = client->node("ns=2;s=0:TEST1/SGGN1/OUT.CV");
+            node = client->node("ns=2;s=0:TEST1/SGGN1/OUT.CV");
             if (node) {
                 qDebug() << "Node object created, enabling monitoring";
 
@@ -126,12 +128,15 @@ int main(int argc, char *argv[])
             } else {
                 qDebug() << "Failed to create node object";
             }
+        } else if (state == QOpcUaClient::ClientState::Disconnected) {
+            qDebug() << "Disconnected state, ESC key or server exited";
+            a.quit();
         }
     });
 
     // Handle endpoint request completion
     QObject::connect(client, &QOpcUaClient::endpointsRequestFinished,
-                     [client](QList<QOpcUaEndpointDescription> endpoints) {
+                     [client, &node](QList<QOpcUaEndpointDescription> endpoints) {
                          qDebug() << "Endpoints returned:" << endpoints.count();
                          if (endpoints.size()) {
                              client->connectToEndpoint(endpoints.first());
@@ -142,12 +147,19 @@ int main(int argc, char *argv[])
 
     // Set up keyboard handler for Escape key
     KeyboardHandler *keyHandler = new KeyboardHandler(&a);
-    QObject::connect(keyHandler, &KeyboardHandler::escapePressed, [&a, client]() {
+    QObject::connect(keyHandler, &KeyboardHandler::escapePressed, [&a, client, node]() {
         qDebug() << "Escape key pressed. Shutting down...";
-        if (client) {
+
+        if (node) {
+            node->disableMonitoring(QOpcUa::NodeAttribute::Value);
+        }
+
+
+        if (client && client->state() == QOpcUaClient::ClientState::Connected) {
+        //if (client) {
+            qDebug() << "Disconnecting from endpoint...";
             client->disconnectFromEndpoint();
         }
-        a.quit();
     });
 
     // Set up a timer to keep the subscription running for demonstration
