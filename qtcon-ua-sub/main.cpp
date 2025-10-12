@@ -154,9 +154,7 @@ int main(int argc, char *argv[])
             node->disableMonitoring(QOpcUa::NodeAttribute::Value);
         }
 
-
         if (client && client->state() == QOpcUaClient::ClientState::Connected) {
-        //if (client) {
             qDebug() << "Disconnecting from endpoint...";
             client->disconnectFromEndpoint();
         }
