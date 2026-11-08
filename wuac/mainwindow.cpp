@@ -187,12 +187,11 @@ void MainWindow::setupChart()
 {
     // Create chart
     m_chart = new QChart();
-    m_chart->setTitle("OPC UA Data");
     m_chart->setAnimationOptions(QChart::NoAnimation);
+    m_chart->legend()->hide();
     
     // Create line series
     m_series = new QLineSeries();
-    m_series->setName("Value");
     
     // Enable markers on data points
     m_series->setPointsVisible(true);
