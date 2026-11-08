@@ -3,6 +3,8 @@
 #include <QApplication>
 #include <QMessageBox>
 #include <QDebug>
+#include <QPointer>
+#include <QTimer>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
@@ -78,7 +80,20 @@ void MainWindow::connectDisconnect()
                         QMessageBox::critical(this, "Error", "No endpoints available");
                         return;
                     }
-                    m_client->connectToEndpoint(endpoints.first());
+                    // This build has no security support, so only an unsecured endpoint can be used
+                    const QString nonePolicy = QStringLiteral("http://opcfoundation.org/UA/SecurityPolicy#None");
+                    for (const auto &endpoint : endpoints) {
+                        if (endpoint.securityPolicy() == nonePolicy
+                            && endpoint.securityMode() == QOpcUaEndpointDescription::MessageSecurityMode::None) {
+                            m_endpoint = endpoint;
+                            m_connectAttemptsLeft = 3;
+                            m_client->connectToEndpoint(endpoint);
+                            return;
+                        }
+                    }
+                    QMessageBox::critical(this, "Error", "Server offers no unsecured (SecurityPolicy None) endpoint");
+                    ui->pushButtonConnectDisconned->setText("Connect");
+                    ui->pushButtonConnectDisconned->setEnabled(true);
                 });
         
         ui->pushButtonConnectDisconned->setText("Connecting...");
@@ -122,6 +137,18 @@ void MainWindow::onClientStateChanged(QOpcUaClient::ClientState state)
         break;
         
     case QOpcUaClient::ClientState::Disconnected:
+        // The server can time out the first attempt, so retry a few times
+        if (!m_connected && m_connectAttemptsLeft > 0 && m_client
+            && m_client->error() != QOpcUaClient::NoError) {
+            --m_connectAttemptsLeft;
+            QPointer<QOpcUaClient> client = m_client;
+            QTimer::singleShot(1000, this, [this, client]() {
+                if (client && client == m_client && !m_connected)
+                    client->connectToEndpoint(m_endpoint);
+            });
+            break;
+        }
+        m_connectAttemptsLeft = 0;
         m_connected = false;
         ui->pushButtonConnectDisconned->setText("Connect");
         ui->pushButtonConnectDisconned->setEnabled(true);

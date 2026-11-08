@@ -36,6 +36,8 @@ private:
     QOpcUaClient *m_client;
     QOpcUaNode *m_node;
     bool m_connected;
+    QOpcUaEndpointDescription m_endpoint;
+    int m_connectAttemptsLeft = 0;
     
     // Chart components
     QChart *m_chart;
