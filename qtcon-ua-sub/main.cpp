@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include <QOpcUaClient>
+#include <QDateTime>
 #include <QOpcUaProvider>
 #include <QStringList>
 #include <QDebug>
@@ -101,7 +102,7 @@ int main(int argc, char *argv[])
 
     // Connect to the stateChanged signal
     QObject::connect(client, &QOpcUaClient::stateChanged, [client, &node, &a](QOpcUaClient::ClientState state) {
-        qDebug() << "Client state changed:" << state;
+        qDebug() << qPrintable(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")) << "Client state changed:" << state;
         if (state == QOpcUaClient::ClientState::Connected) {
             node = client->node("ns=2;s=0:TEST1/SGGN1/OUT.CV");
             if (node) {
@@ -136,18 +137,23 @@ int main(int argc, char *argv[])
 
     // Handle endpoint request completion
     QObject::connect(client, &QOpcUaClient::endpointsRequestFinished,
-                     [client, &node](QList<QOpcUaEndpointDescription> endpoints) {
-                         qDebug() << "Endpoints returned:" << endpoints.count();
+                     [client, &a](QList<QOpcUaEndpointDescription> endpoints, QOpcUa::UaStatusCode status, QUrl requestUrl) {
+                         qDebug() << "Endpoints returned:" << endpoints.count() << "Status:" << status << "URL:" << requestUrl;
                          if (endpoints.size()) {
                              client->connectToEndpoint(endpoints.first());
                          } else {
                              qDebug() << "No endpoints available";
+                             a.exit(3);
                          }
                      });
 
+    QObject::connect(client, &QOpcUaClient::errorChanged, [](QOpcUaClient::ClientError error) {
+        qDebug() << "Client error:" << error;
+    });
+
     // Set up keyboard handler for Escape key
     KeyboardHandler *keyHandler = new KeyboardHandler(&a);
-    QObject::connect(keyHandler, &KeyboardHandler::escapePressed, [&a, client, node]() {
+    QObject::connect(keyHandler, &KeyboardHandler::escapePressed, [&a, client, &node]() {
         qDebug() << "Escape key pressed. Shutting down...";
 
         if (node) {
