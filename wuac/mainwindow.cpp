@@ -5,6 +5,7 @@
 #include <QDebug>
 #include <QPointer>
 #include <QTimer>
+#include <QEventLoop>
 #include <QSettings>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
@@ -46,14 +47,45 @@ MainWindow::MainWindow(QWidget *parent)
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     QSettings().setValue("window/geometry", saveGeometry());
+    cleanupClient();
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::cleanupClient()
+{
+    m_connectAttemptsLeft = 0;
+    if (!m_client)
+        return;
+
+    if (m_node) {
+        m_node->disableMonitoring(QOpcUa::NodeAttribute::Value);
+        delete m_node;
+        m_node = nullptr;
+    }
+
+    if (m_client->state() != QOpcUaClient::ClientState::Disconnected) {
+        // Disconnect is asynchronous; wait (bounded) for it to complete
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        connect(m_client, &QOpcUaClient::stateChanged, &loop, [&](QOpcUaClient::ClientState s) {
+            if (s == QOpcUaClient::ClientState::Disconnected)
+                loop.quit();
+        });
+        connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        m_client->disconnectFromEndpoint();
+        timeout.start(3000);
+        if (m_client->state() != QOpcUaClient::ClientState::Disconnected)
+            loop.exec();
+    }
+    m_connected = false;
+    delete m_client;
+    m_client = nullptr;
 }
 
 MainWindow::~MainWindow()
 {
-    if (m_client && m_connected) {
-        m_client->disconnectFromEndpoint();
-    }
+    cleanupClient();
     delete ui;
 }
 
