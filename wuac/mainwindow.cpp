@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QEventLoop>
 #include <QSettings>
+#include <QOpcUaUserTokenPolicy>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
@@ -127,9 +128,18 @@ void MainWindow::connectDisconnect()
                     }
                     // This build has no security support, so only an unsecured endpoint can be used
                     const QString nonePolicy = QStringLiteral("http://opcfoundation.org/UA/SecurityPolicy#None");
-                    for (const auto &endpoint : endpoints) {
+                    for (QOpcUaEndpointDescription endpoint : endpoints) {
                         if (endpoint.securityPolicy() == nonePolicy
-                            && endpoint.securityMode() == QOpcUaEndpointDescription::MessageSecurityMode::None) {
+                            && endpoint.securityMode() == QOpcUaEndpointDescription::MessageSecurityMode::None
+                            && endpoint.endpointUrl().startsWith("opc.tcp://")) {
+                            // Some servers advertise a non-None policy on the anonymous token,
+                            // which can't be matched on an unsecured channel
+                            QList<QOpcUaUserTokenPolicy> tokens = endpoint.userIdentityTokens();
+                            for (QOpcUaUserTokenPolicy &t : tokens) {
+                                if (t.tokenType() == QOpcUaUserTokenPolicy::TokenType::Anonymous)
+                                    t.setSecurityPolicy(nonePolicy);
+                            }
+                            endpoint.setUserIdentityTokens(tokens);
                             m_endpoint = endpoint;
                             m_connectAttemptsLeft = 3;
                             m_client->connectToEndpoint(endpoint);
