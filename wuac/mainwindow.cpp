@@ -42,11 +42,15 @@ MainWindow::MainWindow(QWidget *parent)
     setupChart();
 
     restoreGeometry(QSettings().value("window/geometry").toByteArray());
+    ui->lineEditUrl->setText(QSettings().        value("connection/url", ui->lineEditUrl->text()).toString());
+    ui->lineEditNodeId->setText(QSettings().value("connection/nodeId", ui->lineEditNodeId->text()).toString());
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     QSettings().setValue("window/geometry", saveGeometry());
+    QSettings().setValue("connection/url", ui->lineEditUrl->text().trimmed());
+    QSettings().setValue("connection/nodeId", ui->lineEditNodeId->text().trimmed());
     cleanupClient();
     QMainWindow::closeEvent(event);
 }
