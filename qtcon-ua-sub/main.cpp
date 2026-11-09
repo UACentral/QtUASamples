@@ -2,6 +2,7 @@
 #include <QOpcUaClient>
 #include <QDateTime>
 #include <QOpcUaProvider>
+#include <QOpcUaUserTokenPolicy>
 #include <QStringList>
 #include <QDebug>
 #include <QObject>
@@ -19,8 +20,9 @@
 #include <fcntl.h>
 #endif
 
-// Define the server endpoint URL
-const QString OpcUaEndpoint = "opc.tcp://m3:48400/UA/ComServerWrapper";
+// Defaults, overridable via command line: qtcon-ua-sub [endpointUrl] [nodeId]
+const QString DefaultEndpoint = "opc.tcp://m3:48400/UA/ComServerWrapper";
+const QString DefaultNodeId = "ns=2;s=0:TEST1/SGGN1/OUT.CV";
 
 class KeyboardHandler : public QObject
 {
@@ -86,6 +88,16 @@ int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
 
+    const QStringList args = a.arguments();
+    if (args.contains("-h") || args.contains("--help") || args.size() > 3) {
+        qDebug().noquote() << "Usage:" << args.value(0) << "[endpointUrl] [nodeId]\n"
+                           << "  endpointUrl  default:" << DefaultEndpoint << "\n"
+                           << "  nodeId       default:" << DefaultNodeId;
+        return args.size() > 3 ? 4 : 0;
+    }
+    const QString OpcUaEndpoint = args.value(1, DefaultEndpoint);
+    const QString nodeId = args.value(2, DefaultNodeId);
+
     QOpcUaProvider provider;
     if (provider.availableBackends().isEmpty()) {
         qDebug() << "No OPC UA backends available";
@@ -101,10 +113,10 @@ int main(int argc, char *argv[])
     QOpcUaNode *node = nullptr;
 
     // Connect to the stateChanged signal
-    QObject::connect(client, &QOpcUaClient::stateChanged, [client, &node, &a](QOpcUaClient::ClientState state) {
+    QObject::connect(client, &QOpcUaClient::stateChanged, [client, &node, &a, nodeId](QOpcUaClient::ClientState state) {
         qDebug() << qPrintable(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")) << "Client state changed:" << state;
         if (state == QOpcUaClient::ClientState::Connected) {
-            node = client->node("ns=2;s=0:TEST1/SGGN1/OUT.CV");
+            node = client->node(nodeId);
             if (node) {
                 qDebug() << "Node object created, enabling monitoring";
 
@@ -139,10 +151,26 @@ int main(int argc, char *argv[])
     QObject::connect(client, &QOpcUaClient::endpointsRequestFinished,
                      [client, &a](QList<QOpcUaEndpointDescription> endpoints, QOpcUa::UaStatusCode status, QUrl requestUrl) {
                          qDebug() << "Endpoints returned:" << endpoints.count() << "Status:" << status << "URL:" << requestUrl;
-                         if (endpoints.size()) {
-                             client->connectToEndpoint(endpoints.first());
-                         } else {
-                             qDebug() << "No endpoints available";
+                         static const QString nonePolicy = "http://opcfoundation.org/UA/SecurityPolicy#None";
+                         // This client only uses SecurityMode None / SecurityPolicy None
+                         for (QOpcUaEndpointDescription ep : endpoints) {
+                             if (ep.securityMode() != QOpcUaEndpointDescription::MessageSecurityMode::None
+                                 || ep.securityPolicy() != nonePolicy
+                                 || !ep.endpointUrl().startsWith("opc.tcp://"))
+                                 continue;
+                             // Some servers advertise a non-None policy on the anonymous token,
+                             // which can't be matched on an unsecured channel
+                             QList<QOpcUaUserTokenPolicy> tokens = ep.userIdentityTokens();
+                             for (QOpcUaUserTokenPolicy &t : tokens) {
+                                 if (t.tokenType() == QOpcUaUserTokenPolicy::TokenType::Anonymous)
+                                     t.setSecurityPolicy(nonePolicy);
+                             }
+                             ep.setUserIdentityTokens(tokens);
+                             client->connectToEndpoint(ep);
+                             return;
+                         }
+                         {
+                             qDebug() << "No None/None endpoint available";
                              a.exit(3);
                          }
                      });

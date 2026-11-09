@@ -50,6 +50,7 @@ private:
     QValueAxis *m_axisY;
     QDateTime m_startTime;
     
+    void cleanupClient();
     void setupChart();
     void addDataPoint(double value);
 };

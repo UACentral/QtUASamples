@@ -5,7 +5,9 @@
 #include <QDebug>
 #include <QPointer>
 #include <QTimer>
+#include <QEventLoop>
 #include <QSettings>
+#include <QOpcUaUserTokenPolicy>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
@@ -41,19 +43,54 @@ MainWindow::MainWindow(QWidget *parent)
     setupChart();
 
     restoreGeometry(QSettings().value("window/geometry").toByteArray());
+    ui->lineEditUrl->setText(QSettings().        value("connection/url", ui->lineEditUrl->text()).toString());
+    ui->lineEditNodeId->setText(QSettings().value("connection/nodeId", ui->lineEditNodeId->text()).toString());
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     QSettings().setValue("window/geometry", saveGeometry());
+    QSettings().setValue("connection/url", ui->lineEditUrl->text().trimmed());
+    QSettings().setValue("connection/nodeId", ui->lineEditNodeId->text().trimmed());
+    cleanupClient();
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::cleanupClient()
+{
+    m_connectAttemptsLeft = 0;
+    if (!m_client)
+        return;
+
+    if (m_node) {
+        m_node->disableMonitoring(QOpcUa::NodeAttribute::Value);
+        delete m_node;
+        m_node = nullptr;
+    }
+
+    if (m_client->state() != QOpcUaClient::ClientState::Disconnected) {
+        // Disconnect is asynchronous; wait (bounded) for it to complete
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        connect(m_client, &QOpcUaClient::stateChanged, &loop, [&](QOpcUaClient::ClientState s) {
+            if (s == QOpcUaClient::ClientState::Disconnected)
+                loop.quit();
+        });
+        connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        m_client->disconnectFromEndpoint();
+        timeout.start(3000);
+        if (m_client->state() != QOpcUaClient::ClientState::Disconnected)
+            loop.exec();
+    }
+    m_connected = false;
+    delete m_client;
+    m_client = nullptr;
 }
 
 MainWindow::~MainWindow()
 {
-    if (m_client && m_connected) {
-        m_client->disconnectFromEndpoint();
-    }
+    cleanupClient();
     delete ui;
 }
 
@@ -91,9 +128,18 @@ void MainWindow::connectDisconnect()
                     }
                     // This build has no security support, so only an unsecured endpoint can be used
                     const QString nonePolicy = QStringLiteral("http://opcfoundation.org/UA/SecurityPolicy#None");
-                    for (const auto &endpoint : endpoints) {
+                    for (QOpcUaEndpointDescription endpoint : endpoints) {
                         if (endpoint.securityPolicy() == nonePolicy
-                            && endpoint.securityMode() == QOpcUaEndpointDescription::MessageSecurityMode::None) {
+                            && endpoint.securityMode() == QOpcUaEndpointDescription::MessageSecurityMode::None
+                            && endpoint.endpointUrl().startsWith("opc.tcp://")) {
+                            // Some servers advertise a non-None policy on the anonymous token,
+                            // which can't be matched on an unsecured channel
+                            QList<QOpcUaUserTokenPolicy> tokens = endpoint.userIdentityTokens();
+                            for (QOpcUaUserTokenPolicy &t : tokens) {
+                                if (t.tokenType() == QOpcUaUserTokenPolicy::TokenType::Anonymous)
+                                    t.setSecurityPolicy(nonePolicy);
+                            }
+                            endpoint.setUserIdentityTokens(tokens);
                             m_endpoint = endpoint;
                             m_connectAttemptsLeft = 3;
                             m_client->connectToEndpoint(endpoint);
