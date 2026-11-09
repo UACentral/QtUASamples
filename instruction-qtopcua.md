@@ -83,14 +83,14 @@ The imports must **not** include `libopen62541.dll`. Qt6OpcUa.dll, Qt6Core.dll, 
 $env:PATH = "C:\Qt\Tools\llvm-mingw2217_64\bin;C:\Qt\6.12.0\llvm-mingw_64\bin;$env:PATH"
 cd C:\g\QtUASamples\qtcon-ua-sub\build\Desktop_Qt_6_12_0_llvm_mingw_64_bit_Debug
 mingw32-make
-C:\g\QtUASamples\qtcon-ua-sub\deploy.cmd
-.\qtcon-ua-sub.exe
+C:\g\QtUASamples\deploy.cmd "C:\g\QtUASamples\qtcon-ua-sub\build\Desktop_Qt_6_12_0_llvm_mingw_64_bit_Debug\qtcon-ua-sub.exe" "" "" 1
 ```
 
-Re-run `deploy.cmd` after reinstalling qtopcua. It refreshes the plugin copy in the build folder (`opcua\open62541_backend.dll`).
-A stale copy from an older build causes `Failed to load OPC UA plugin: "open62541"`.
+By default, the script creates a uniquely named folder under `%TEMP%` using the current date and time (`yyyyMMdd-HHmmss`), then prints its location and copies the path to the clipboard for opening in File Explorer. The executable and its deployed Qt files are placed there; run the deployed executable from that folder. You can provide a deploy directory as the third argument.
 
-`deploy.cmd` also accepts a full path to an exe: `deploy.cmd "C:\path\to\app.exe" [qt_dir]`.
+Re-run `deploy.cmd` after reinstalling qtopcua to create a fresh deployment. A stale plugin in the deployment folder can cause `Failed to load OPC UA plugin: "open62541"`.
+
+The repository-root `deploy.cmd` requires a full path to the `.exe`. Pass `1` as the fourth argument for qtopcua apps so deployment fails if `opcua\open62541_backend.dll` is missing; for example: `deploy.cmd "C:\path\to\app.exe" "C:\Qt\6.12.0\llvm-mingw_64" "C:\path\to\deploy" 1`.
 
 Expected output: the client connects, then prints `Monitoring enabled ... Status: QOpcUa::Good`,
 followed by `Subscription update - Value: ...` roughly once per second.
