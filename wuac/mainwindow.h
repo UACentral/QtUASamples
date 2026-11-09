@@ -6,6 +6,7 @@
 #include <QOpcUaProvider>
 #include <QOpcUaNode>
 #include <QDateTime>
+#include <QCloseEvent>
 #include <QtCharts/QChart>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
@@ -23,6 +24,9 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void exitApplication();

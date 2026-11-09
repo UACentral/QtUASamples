@@ -5,6 +5,7 @@
 #include <QDebug>
 #include <QPointer>
 #include <QTimer>
+#include <QSettings>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
@@ -38,6 +39,14 @@ MainWindow::MainWindow(QWidget *parent)
     
     // Setup chart
     setupChart();
+
+    restoreGeometry(QSettings().value("window/geometry").toByteArray());
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    QSettings().setValue("window/geometry", saveGeometry());
+    QMainWindow::closeEvent(event);
 }
 
 MainWindow::~MainWindow()
@@ -50,7 +59,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::exitApplication()
 {
-    QApplication::quit();
+    close();
 }
 
 void MainWindow::connectDisconnect()
