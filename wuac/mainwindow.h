@@ -33,8 +33,18 @@ private slots:
     void connectDisconnect();
     void onClientStateChanged(QOpcUaClient::ClientState state);
     void onValueUpdated(QOpcUa::NodeAttribute attr, QVariant value);
+    void saveConfig();
+    void saveConfigAs();
+    void openConfig();
 
 private:
+    QString m_cfgPath;
+    bool writeConfig(const QString &path);
+    bool loadConfig(const QString &path);
+    QStringList recentFiles() const;
+    void addRecentFile(const QString &path);
+    void updateRecentMenu();
+
     Ui::MainWindow *ui;
     QOpcUaProvider *m_provider;
     QOpcUaClient *m_client;

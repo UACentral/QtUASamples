@@ -7,6 +7,10 @@
 #include <QTimer>
 #include <QEventLoop>
 #include <QSettings>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QDir>
+#include <algorithm>
 #include <QOpcUaUserTokenPolicy>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
@@ -42,16 +46,117 @@ MainWindow::MainWindow(QWidget *parent)
     // Setup chart
     setupChart();
 
-    restoreGeometry(QSettings().value("window/geometry").toByteArray());
-    ui->lineEditUrl->setText(QSettings().        value("connection/url", ui->lineEditUrl->text()).toString());
-    ui->lineEditNodeId->setText(QSettings().value("connection/nodeId", ui->lineEditNodeId->text()).toString());
+    connect(ui->actionSave, &QAction::triggered, this, &MainWindow::saveConfig);
+    connect(ui->actionSave_As, &QAction::triggered, this, &MainWindow::saveConfigAs);
+    connect(ui->actionOpen, &QAction::triggered, this, &MainWindow::openConfig);
+    updateRecentMenu();
+
+    // Restore the last opened/saved configuration
+    const QStringList recent = recentFiles();
+    if (!recent.isEmpty())
+        loadConfig(recent.first());
+}
+
+QStringList MainWindow::recentFiles() const
+{
+    QStringList files = QSettings().value("recent/files").toStringList();
+    files.erase(std::remove_if(files.begin(), files.end(),
+                               [](const QString &f) { return !QFileInfo::exists(f); }),
+                files.end());
+    return files;
+}
+
+void MainWindow::addRecentFile(const QString &path)
+{
+    QStringList files = recentFiles();
+    files.removeAll(path);
+    files.prepend(path);
+    while (files.size() > 10)
+        files.removeLast();
+    QSettings().setValue("recent/files", files);
+    updateRecentMenu();
+}
+
+void MainWindow::updateRecentMenu()
+{
+    ui->menuRecent->clear();
+    const QStringList files = recentFiles();
+    for (const QString &f : files) {
+        QAction *a = ui->menuRecent->addAction(QDir::toNativeSeparators(f));
+        connect(a, &QAction::triggered, this, [this, f]() {
+            if (loadConfig(f))
+                addRecentFile(f);
+        });
+    }
+    ui->menuRecent->setEnabled(!files.isEmpty());
+}
+
+bool MainWindow::writeConfig(const QString &path)
+{
+    QSettings cfg(path, QSettings::IniFormat);
+    cfg.setValue("connection/url", ui->lineEditUrl->text().trimmed());
+    cfg.setValue("connection/nodeId", ui->lineEditNodeId->text().trimmed());
+    cfg.setValue("window/geometry", saveGeometry());
+    cfg.setValue("window/pos", pos());
+    cfg.setValue("window/size", size());
+    cfg.sync();
+    if (cfg.status() != QSettings::NoError) {
+        QMessageBox::critical(this, "Error", "Failed to write " + QDir::toNativeSeparators(path));
+        return false;
+    }
+    m_cfgPath = path;
+    addRecentFile(path);
+    return true;
+}
+
+bool MainWindow::loadConfig(const QString &path)
+{
+    QSettings cfg(path, QSettings::IniFormat);
+    if (cfg.status() != QSettings::NoError) {
+        QMessageBox::critical(this, "Error", "Failed to read " + QDir::toNativeSeparators(path));
+        return false;
+    }
+    ui->lineEditUrl->setText(cfg.value("connection/url", ui->lineEditUrl->text()).toString());
+    ui->lineEditNodeId->setText(cfg.value("connection/nodeId", ui->lineEditNodeId->text()).toString());
+    if (!restoreGeometry(cfg.value("window/geometry").toByteArray())) {
+        if (cfg.contains("window/size"))
+            resize(cfg.value("window/size").toSize());
+        if (cfg.contains("window/pos"))
+            move(cfg.value("window/pos").toPoint());
+    }
+    m_cfgPath = path;
+    return true;
+}
+
+void MainWindow::saveConfig()
+{
+    if (m_cfgPath.isEmpty())
+        saveConfigAs();
+    else
+        writeConfig(m_cfgPath);
+}
+
+void MainWindow::saveConfigAs()
+{
+    QString path = QFileDialog::getSaveFileName(this, "Save Configuration", m_cfgPath,
+                                                "Config files (*.cfg)");
+    if (path.isEmpty())
+        return;
+    if (QFileInfo(path).suffix().isEmpty())
+        path += ".cfg";
+    writeConfig(path);
+}
+
+void MainWindow::openConfig()
+{
+    const QString path = QFileDialog::getOpenFileName(this, "Open Configuration", m_cfgPath,
+                                                      "Config files (*.cfg)");
+    if (!path.isEmpty() && loadConfig(path))
+        addRecentFile(path);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    QSettings().setValue("window/geometry", saveGeometry());
-    QSettings().setValue("connection/url", ui->lineEditUrl->text().trimmed());
-    QSettings().setValue("connection/nodeId", ui->lineEditNodeId->text().trimmed());
     cleanupClient();
     QMainWindow::closeEvent(event);
 }
